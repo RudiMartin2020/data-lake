@@ -1,0 +1,20 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+
+# 런타임 데이터(로컬 스토리지/SQLite 카탈로그)
+/data/
+.env
+.run/
+
+# 대용량 샘플 데이터(생성기로 재생성 가능) — generate_samples.py 는 추적
+/sample_data/production_10mb.*
+
+# OS/IDE
+.DS_Store
+.idea/
+.vscode/

@@ -1,0 +1,22 @@
+# --- 코어 (필수, 단일 프로세스 테스트에 충분) ---
+fastapi>=0.110
+uvicorn[standard]>=0.27
+pydantic>=2.6
+python-multipart>=0.0.9
+
+# --- 쿼리 엔진 (권장) ---
+duckdb>=0.10
+
+# --- 선택 백엔드 (운영 전환 시) ---
+# STORAGE_BACKEND=minio
+minio>=7.2
+# TASK_BACKEND=celery
+celery>=5.3
+redis>=5.0
+# CATALOG_BACKEND=postgres
+psycopg[binary]>=3.1
+psycopg-pool>=3.2
+
+# --- 테스트 ---
+httpx>=0.27
+pytest>=8.0
