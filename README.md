@@ -88,7 +88,7 @@
 
 ### 4.2 centos9 (Linux 호스트) 상세
 
-- OS: CentOS Stream 9 / Python 3.9.25
+- OS: CentOS Stream 9 / **Python 3.12.12** (uv 관리, `.python-version` 고정)
 - **네이티브 구동 중**: `redis-server` (`:6379`)
 - **네이티브 구동(MinIO)**: `/workspace/offline_repo/redis/minio` 단일 바이너리를 직접 실행 (`:9000`/`:9001`)
 - 설치됨: FastAPI 0.128.8, Uvicorn 0.39.0, Pydantic 2.13.4
@@ -216,11 +216,11 @@ docker exec -it centos9 bash
 # (컨테이너 내부) /workspace/data-lake
 cd /workspace/data-lake
 
-# 0) venv 생성 + 의존성 설치 (최초 1회)
+# 0) venv 생성 + 의존성 설치 (최초 1회) — uv + Python 3.12.12
 bash setup.sh
-#   또는 수동:
-#   python3 -m venv .venv
-#   .venv/bin/pip install -r requirements.txt
+#   또는 수동(uv):
+#   uv python install 3.12.12
+#   uv venv --python 3.12.12 .venv && uv pip install -r requirements.txt
 
 # (선택) 셸에 venv 활성화 — 이후 python/pytest/uvicorn 을 바로 사용
 source .venv/bin/activate
