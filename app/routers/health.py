@@ -1,12 +1,18 @@
-"""헬스/정보 엔드포인트."""
+"""헬스/정보/메트릭 엔드포인트."""
 from __future__ import annotations
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Response
 
-from .. import __version__
+from .. import __version__, metrics
 from ..config import settings
 
 router = APIRouter(tags=["system"])
+
+
+@router.get("/metrics")
+def prometheus_metrics() -> Response:
+    """Prometheus 스크레이프용 메트릭(설계서 §8 관측성)."""
+    return Response(content=metrics.render(), media_type=metrics.CONTENT_TYPE_LATEST)
 
 
 @router.get("/health")

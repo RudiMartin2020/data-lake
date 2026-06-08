@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import duckdb
 
+from . import metrics
 from .dataset import DATASET_NAME
 from .iceberg_io import scan_partition
 from .schemas import QueryRequest, QuerySummary
@@ -30,6 +31,7 @@ _PRODUCTS_SQL = (
 
 
 def run_query(req: QueryRequest) -> QuerySummary:
+    metrics.QUERY_TOTAL.inc()
     pdate = req.production_date.isoformat()
     summary = QuerySummary(
         dataset=DATASET_NAME,

@@ -152,8 +152,15 @@ dlq/         # 파싱 실패 격리
 | `POST /ingest` | 원천 데이터 비동기 수집. `202 Accepted` + `{task_id, status}` 즉시 응답 후 워커가 백그라운드 처리 |
 | `GET /agent/tools/schema` | 카탈로그 컬럼/메타데이터를 JSON Schema로 반환 |
 | `POST /agent/tools/query` | 계약된 인자값(`{"production_date":"2026-05-29","line_id":"FAB-1"}`)으로 조회 → 요약 JSON 반환 |
+| `POST /ingest/reprocess/{task_id}` | 실패(DLQ) 건을 보존된 원본(raw/)에서 재적재 |
+| `GET /metrics` | Prometheus 메트릭(수집/완료/실패/재시도/쿼리 카운터 + 큐 깊이) |
 
 > **보안 철칙**: 에이전트는 임의 SQL·파일시스템 접근 금지. Pydantic 화이트리스트 인자만 허용.
+>
+> **인증(서비스 토큰)**: `INGEST_TOKEN`/`SERVING_TOKEN` 설정 시 헤더 `X-Service-Token` 검증.
+> 수집(`/ingest*`)·서빙(`/agent/tools/*`)을 **분리 인증**. 미설정 시 비활성(개발).
+>
+> **재시도 정책**: 파싱/검증 오류=영구→DLQ, 인프라 오류=일시→Celery 재시도(소진 시 DLQ).
 
 ---
 
@@ -170,6 +177,8 @@ data-lake/
 │  ├─ catalog.py         # 적재 이력(audit) (sqlite 기본 / postgres 선택)
 │  ├─ catalog_pg.py      # PostgreSQL 이력 구현 (psycopg + 풀)
 │  ├─ iceberg_io.py      # Apache Iceberg 적재/조회/스키마진화 (PyIceberg)
+│  ├─ auth.py            # 서비스 토큰 인증(수집/서빙 분리)
+│  ├─ metrics.py         # Prometheus 메트릭 + 큐 깊이
 │  ├─ tasks.py           # 작업 실행 (inprocess 기본 / celery 선택)
 │  ├─ processing.py      # Write Path: parse→validate→Parquet 변환→적재
 │  ├─ query.py           # Read Path: Iceberg 프루닝(PyArrow) + DuckDB in-memory 집계

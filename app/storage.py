@@ -50,6 +50,9 @@ class LocalStorage:
     def bucket_root(self, bucket: str) -> Path:
         return self.root / bucket
 
+    def get_bytes(self, bucket: str, key: str) -> bytes:
+        return (self.root / bucket / key).read_bytes()
+
     def commit(self, bucket: str, key: str) -> None:  # 로컬은 이미 제자리
         return None
 
@@ -103,6 +106,14 @@ class MinioStorage:
 
     def bucket_root(self, bucket: str) -> Path:
         return self.cache_root / bucket
+
+    def get_bytes(self, bucket: str, key: str) -> bytes:
+        resp = self.client.get_object(bucket, key)
+        try:
+            return resp.read()
+        finally:
+            resp.close()
+            resp.release_conn()
 
     def commit(self, bucket: str, key: str) -> None:
         local = self._cache(bucket, key)

@@ -4,8 +4,10 @@ from __future__ import annotations
 import hashlib
 import uuid
 
-from fastapi import APIRouter, File, Form, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
 
+from .. import metrics
+from ..auth import verify_ingest
 from ..catalog import catalog
 from ..config import settings
 from ..dataset import DATASET_NAME
@@ -13,7 +15,7 @@ from ..schemas import IngestAccepted, TaskStatus
 from ..storage import storage
 from ..tasks import enqueue
 
-router = APIRouter(tags=["ingestion"])
+router = APIRouter(tags=["ingestion"], dependencies=[Depends(verify_ingest)])
 
 
 @router.post("/ingest", response_model=IngestAccepted, status_code=status.HTTP_202_ACCEPTED)
@@ -28,6 +30,7 @@ async def ingest(file: UploadFile = File(...), source_id: str = Form(...)) -> In
     # 멱등성: 동일 content_hash 중복 적재 방지(설계서 4.1)
     dup = catalog.find_by_hash(content_hash)
     if dup:
+        metrics.INGEST_DUPLICATE.inc()
         return IngestAccepted(
             task_id=dup["task_id"],
             status="duplicate",
@@ -52,6 +55,7 @@ async def ingest(file: UploadFile = File(...), source_id: str = Form(...)) -> In
 
     # 비동기 처리 큐잉(인프로세스 또는 Celery)
     enqueue(task_id, raw_key, raw)
+    metrics.INGEST_ACCEPTED.inc()
 
     return IngestAccepted(
         task_id=task_id,
@@ -74,4 +78,32 @@ def ingest_status(task_id: str) -> TaskStatus:
         rows=rec.get("rows"),
         partitions=rec.get("partitions"),
         error=rec.get("error"),
+    )
+
+
+@router.post("/ingest/reprocess/{task_id}", response_model=IngestAccepted,
+             status_code=status.HTTP_202_ACCEPTED)
+def reprocess(task_id: str) -> IngestAccepted:
+    """실패(DLQ) 건을 보존된 원본(raw/)에서 재적재한다(설계서 §8 재처리 경로)."""
+    rec = catalog.get(task_id)
+    if not rec:
+        raise HTTPException(status_code=404, detail="task_id 를 찾을 수 없습니다.")
+    if rec["status"] != "failed":
+        raise HTTPException(status_code=409, detail=f"failed 상태만 재처리 가능(현재: {rec['status']}).")
+
+    raw_key = f"{task_id}__{rec.get('filename') or 'upload.csv'}"
+    try:
+        raw = storage.get_bytes(settings.bucket_raw, raw_key)
+    except Exception:
+        raise HTTPException(status_code=410, detail="원본(raw) 보존본을 찾을 수 없습니다.")
+
+    catalog.update(task_id, status="accepted", error=None)
+    enqueue(task_id, raw_key, raw)
+    metrics.INGEST_ACCEPTED.inc()
+    return IngestAccepted(
+        task_id=task_id,
+        status="reprocessing",
+        source_id=rec.get("source_id") or "",
+        filename=rec.get("filename") or "",
+        content_hash=rec.get("content_hash") or "",
     )

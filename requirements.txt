@@ -3,6 +3,8 @@ fastapi>=0.110
 uvicorn[standard]>=0.27
 pydantic>=2.6
 python-multipart>=0.0.9
+# 관측성(Prometheus /metrics) · DLQ 재처리 큐 깊이(redis)
+prometheus-client>=0.20
 
 # --- 테이블 포맷 / 쿼리 엔진 (Apache Iceberg + PyArrow + DuckDB) ---
 pyiceberg[sql-postgres]>=0.10

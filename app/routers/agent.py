@@ -5,14 +5,17 @@ Pydantic 으로 엄격히 정의된 계약 인자만 허용한다.
 """
 from __future__ import annotations
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 
+from ..auth import verify_serving
 from ..dataset import json_schema, json_schema_from
 from ..iceberg_io import current_schema_fields
 from ..query import run_query
 from ..schemas import QueryRequest, QuerySummary
 
-router = APIRouter(prefix="/agent/tools", tags=["agent"])
+router = APIRouter(
+    prefix="/agent/tools", tags=["agent"], dependencies=[Depends(verify_serving)]
+)
 
 
 @router.get("/schema")

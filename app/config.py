@@ -67,6 +67,10 @@ class Settings:
     # --- 조회 안전장치 ---
     query_row_limit: int = int(_env("QUERY_ROW_LIMIT", "10000"))
 
+    # --- API 인증 (서비스 토큰) — 수집/서빙 분리. 미설정("") 시 해당 인증 비활성(개발 폴백) ---
+    ingest_token: str = _env("INGEST_TOKEN", "")
+    serving_token: str = _env("SERVING_TOKEN", "")
+
     # --- Apache Iceberg (테이블 포맷) ---
     # 카탈로그: catalog_backend(postgres|sqlite) 재사용. warehouse: storage_backend(minio|local)에 따라 s3://|file://
     iceberg_namespace: str = _env("ICEBERG_NAMESPACE", "lake")

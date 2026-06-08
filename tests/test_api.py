@@ -124,3 +124,57 @@ def test_query_missing_partition():
         json={"production_date": "1999-01-01", "line_id": "FAB-9"},
     )
     assert q.json()["found"] is False
+
+
+def test_metrics_endpoint():
+    body = client.get("/metrics").text
+    assert "ingest_accepted_total" in body
+    assert "query_total" in body
+
+
+def test_ingest_auth_token():
+    """INGEST_TOKEN 설정 시 헤더 없으면 401, 맞으면 통과."""
+    from app.config import settings
+
+    settings.ingest_token = "s3cret"
+    try:
+        # 헤더 없음 → 401
+        r = client.post(
+            "/ingest",
+            files={"file": ("a.csv", SAMPLE, "text/csv")},
+            data={"source_id": "x"},
+        )
+        assert r.status_code == 401
+        # 잘못된 토큰 → 401
+        r2 = client.post(
+            "/ingest",
+            files={"file": ("a.csv", SAMPLE, "text/csv")},
+            data={"source_id": "x"},
+            headers={"X-Service-Token": "wrong"},
+        )
+        assert r2.status_code == 401
+        # 올바른 토큰 → 202/그 외(인증 통과)
+        r3 = client.post(
+            "/ingest",
+            files={"file": ("a.csv", SAMPLE, "text/csv")},
+            data={"source_id": "x"},
+            headers={"X-Service-Token": "s3cret"},
+        )
+        assert r3.status_code in (202,)
+    finally:
+        settings.ingest_token = ""  # 다른 테스트에 영향 없도록 복구
+
+
+def test_reprocess_errors():
+    # 없는 task → 404
+    assert client.post("/ingest/reprocess/nope").status_code == 404
+    # done 상태 재처리 시도 → 409 (failed 만 허용)
+    r = client.post(
+        "/ingest",
+        files={"file": ("p2.csv", SAMPLE, "text/csv")},
+        data={"source_id": "rp"},
+    )
+    # 동일 내용이면 duplicate 일 수 있으니 task_id 확보
+    tid = r.json()["task_id"]
+    _wait_done(tid)
+    assert client.post(f"/ingest/reprocess/{tid}").status_code == 409
