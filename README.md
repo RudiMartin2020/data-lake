@@ -232,7 +232,7 @@ source .venv/bin/activate
 
 # 1) 테스트 — 추가 서비스 없이 5개 통과
 .venv/bin/pytest -q          # 활성화했다면 그냥 'pytest -q'
-#   전체 테스트 시나리오(부하/적재현황/쿼리): docs/TEST_SCENARIOS.md
+#   전체 테스트 시나리오: docs/TEST_SCENARIOS.md · 실행 결과: docs/TEST_RESULTS.md
 
 # 2) 서버 기동
 bash run.sh                  # = .venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
