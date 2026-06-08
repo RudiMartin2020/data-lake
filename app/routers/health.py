@@ -31,7 +31,12 @@ def info() -> dict:
             "storage": settings.storage_backend,
             "task": settings.task_backend,
             "catalog": settings.catalog_backend,
-            "query_engine": "duckdb" if _has("duckdb") else "stdlib",
+            "table_format": "iceberg" if _has("pyiceberg") else "n/a",
+            "query_engine": "pyarrow",
+        },
+        "iceberg": {
+            "namespace": settings.iceberg_namespace,
+            "warehouse": settings.iceberg_warehouse,
         },
         "data_root": str(settings.data_root),
     }

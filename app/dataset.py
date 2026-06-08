@@ -30,11 +30,31 @@ DATASET_NAME = "production"
 
 
 def json_schema() -> dict:
-    """GET /agent/tools/schema 가 반환하는 JSON Schema."""
+    """기준(정적) JSON Schema — Iceberg 테이블이 아직 없을 때 폴백."""
     properties = {
         col: {"type": _json_type(meta["type"]), "description": meta["description"]}
         for col, meta in PRODUCTION_COLUMNS.items()
     }
+    return {
+        "dataset": DATASET_NAME,
+        "partition_keys": PARTITION_KEYS,
+        "schema": {
+            "type": "object",
+            "properties": properties,
+            "required": REQUIRED_COLUMNS,
+        },
+    }
+
+
+def json_schema_from(fields) -> dict:
+    """Iceberg 현재 스키마(list of (name, iceberg_type_str))로 동적 생성.
+
+    스키마 진화로 추가된 컬럼이 자동 반영된다.
+    """
+    properties = {}
+    for name, itype in fields:
+        desc = PRODUCTION_COLUMNS.get(name, {}).get("description", "")
+        properties[name] = {"type": _iceberg_json_type(itype), "description": desc}
     return {
         "dataset": DATASET_NAME,
         "partition_keys": PARTITION_KEYS,
@@ -53,3 +73,14 @@ def _json_type(t: str) -> str:
         "integer": "integer",
         "float": "number",
     }.get(t, "string")
+
+
+def _iceberg_json_type(t: str) -> str:
+    t = t.lower()
+    if t in ("int", "long"):
+        return "integer"
+    if t in ("float", "double") or t.startswith("decimal"):
+        return "number"
+    if t == "boolean":
+        return "boolean"
+    return "string"  # string, date, timestamp 등

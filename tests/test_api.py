@@ -80,6 +80,35 @@ def test_ingest_then_query():
     assert s["row_count"] == 3
 
 
+def test_schema_evolution():
+    """새 컬럼이 포함된 데이터를 적재하면 Iceberg 스키마가 무중단 진화하고
+    /schema 에 자동 반영된다. 기존 데이터 조회도 정상 유지."""
+    evolved = (
+        "production_date,line_id,product_id,qty,defect_qty,operator\n"
+        "2026-05-29,FAB-1,P-100,100,2,kim\n"
+    )
+    r = client.post(
+        "/ingest",
+        files={"file": ("e.csv", evolved, "text/csv")},
+        data={"source_id": "evolve"},
+    )
+    assert r.status_code == 202
+    done = _wait_done(r.json()["task_id"])
+    assert done["status"] == "done", done
+
+    # /schema 에 새 컬럼(operator) 반영
+    schema = client.get("/agent/tools/schema").json()
+    assert "operator" in schema["schema"]["properties"]
+
+    # 기존 데이터 + 신규 합산(1000 + 100), 행 3 + 1
+    q = client.post(
+        "/agent/tools/query",
+        json={"production_date": "2026-05-29", "line_id": "FAB-1"},
+    ).json()
+    assert q["total_qty"] == 1100
+    assert q["row_count"] == 4
+
+
 def test_query_input_validation():
     # 화이트리스트 위반(경로 주입 시도) → 422
     bad = client.post(

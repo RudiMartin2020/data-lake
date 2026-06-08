@@ -4,11 +4,12 @@ uvicorn[standard]>=0.27
 pydantic>=2.6
 python-multipart>=0.0.9
 
-# --- 쿼리 엔진 (권장) ---
-duckdb>=0.10
+# --- 테이블 포맷 / 쿼리 엔진 (Apache Iceberg + PyArrow) ---
+pyiceberg[sql-postgres]>=0.10
+pyarrow>=15
 
 # --- 선택 백엔드 (운영 전환 시) ---
-# STORAGE_BACKEND=minio
+# STORAGE_BACKEND=minio  (Iceberg warehouse 를 MinIO/S3 에 저장)
 minio>=7.2
 # TASK_BACKEND=celery
 celery>=5.3

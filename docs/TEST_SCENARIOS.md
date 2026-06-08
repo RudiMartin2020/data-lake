@@ -7,6 +7,11 @@
 | 실행 위치 | centos9(Linux) 컨테이너 내부, `/workspace/data-lake` |
 | 데이터셋 | `production` — 컬럼 `production_date, line_id, product_id, qty, defect_qty` |
 
+> ⚠️ **엔진 변경 안내**: 적재/서빙이 **Apache Iceberg(PyIceberg) + PyArrow** 로 교체되었습니다.
+> warehouse 경로는 `warehouse/iceberg/lake/production/...`(데이터 parquet + metadata json + manifest avro)이며,
+> 카탈로그는 PostgreSQL `iceberg_tables` 입니다. 아래 부록의 **부하 측정 수치는 이전(DuckDB/Parquet) 구현 기준**이라
+> Iceberg 재측정이 필요합니다(시나리오 절차 자체는 동일하게 동작).
+
 > 모든 명령은 **centos9 컨테이너 안**에서 실행합니다.
 > ```powershell
 > docker exec -it centos9 bash

@@ -51,6 +51,40 @@ class Settings:
     # --- 조회 안전장치 ---
     query_row_limit: int = int(_env("QUERY_ROW_LIMIT", "10000"))
 
+    # --- Apache Iceberg (테이블 포맷) ---
+    # 카탈로그: catalog_backend(postgres|sqlite) 재사용. warehouse: storage_backend(minio|local)에 따라 s3://|file://
+    iceberg_namespace: str = _env("ICEBERG_NAMESPACE", "lake")
+
+    @property
+    def iceberg_catalog_uri(self) -> str:
+        """PyIceberg SqlCatalog 용 SQLAlchemy URI."""
+        if self.catalog_backend == "postgres":
+            dsn = self.postgres_dsn
+            if dsn.startswith("postgresql://"):
+                dsn = "postgresql+psycopg2://" + dsn[len("postgresql://"):]
+            return dsn
+        # 폴백: SQLite 카탈로그(파일)
+        return f"sqlite:///{(self.data_root / 'iceberg_catalog.db').as_posix()}"
+
+    @property
+    def iceberg_warehouse(self) -> str:
+        if self.storage_backend == "minio":
+            return f"s3://{self.bucket_warehouse}/iceberg"
+        return f"file://{(self.data_root / 'iceberg').as_posix()}"
+
+    @property
+    def iceberg_s3_props(self) -> dict:
+        if self.storage_backend != "minio":
+            return {}
+        scheme = "https" if self.minio_secure else "http"
+        return {
+            "s3.endpoint": f"{scheme}://{self.minio_endpoint}",
+            "s3.access-key-id": self.minio_access_key,
+            "s3.secret-access-key": self.minio_secret_key,
+            "s3.region": "us-east-1",
+            "s3.path-style-access": "true",
+        }
+
     @property
     def raw_dir(self) -> Path:
         return self.data_root / self.bucket_raw

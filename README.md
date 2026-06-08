@@ -16,9 +16,9 @@
 
 | 항목 | 내용 |
 |---|---|
-| 단계 | **M5 완료** — 수집·적재·서빙 Tool API 기능 검증 완료 (운영 배포 M6 남음) |
-| 코드 | FastAPI 앱 구현 완료 (`app/`) — 수집/워커/스토리지/카탈로그/서빙 |
-| 검증 | `pytest` 5 passed · 실 미들웨어(MinIO+Celery+PostgreSQL) E2E 통과 |
+| 단계 | **M5 완료** — 수집·Iceberg 적재·서빙 Tool API + 스키마 진화 검증 완료 (운영 배포 M6 남음) |
+| 코드 | FastAPI 앱 구현 완료 (`app/`) — 수집/워커/Iceberg/카탈로그/서빙 |
+| 검증 | `pytest` 6 passed · 실 미들웨어(MinIO/S3+Celery+PostgreSQL) E2E + 스키마 진화 통과 |
 | 산출물 | 기술 설계서(`docs/`) · FastAPI 애플리케이션(`app/`) |
 | 배포 목표 | On-premise · Air-gapped(폐쇄망) · OSS only |
 
@@ -36,7 +36,7 @@
                                               v
                                           Redis (:6379)  -->  Celery Worker
                                                                   |
-                            parse · validate(Pydantic) · Parquet/Iceberg 변환
+                            parse · validate(Pydantic) · Iceberg(Parquet) 적재
                                                                   |
                           +---------------------------------------+
                           v                                       v
@@ -44,7 +44,7 @@
                   raw/staging/warehouse/dlq               카탈로그 · 적재 이력
 
 [AI Agent / LLM]  --(GET /schema · POST /query)-->  Serving Tool API (FastAPI :8000)
-                                                          |  파티션 프루닝 + DuckDB(in-process) 집계
+                                                          |  파티션 프루닝(Iceberg) + PyArrow 집계
                                                           v
                                                      요약 JSON 반환
 ```
@@ -65,10 +65,10 @@
 | Broker | Redis | 경량 메시지 브로커 |
 | Worker | Celery | 비동기 적재 처리, 재시도/스케줄링 |
 | Object Storage | MinIO | 폐쇄망 S3 대체(단일 정적 바이너리) |
-| Table Format | Apache Iceberg / PyIceberg | ACID·스키마 진화·스냅샷 |
+| Table Format | **Apache Iceberg / PyIceberg** | ACID·스키마 진화·스냅샷 (구현 완료) |
 | File Format | Parquet | predicate/projection pushdown |
 | Catalog | PostgreSQL | Iceberg SQL 카탈로그 + 적재 이력 |
-| Query Engine | DuckDB | in-process, 별도 서버 불필요 |
+| Query Engine | **PyArrow** | Iceberg 스캔 결과 집계(별도 서버 불필요, 폐쇄망 안전) |
 | Vector DB | Milvus (선택) | 유사도 검색(RAG) |
 
 ---
@@ -132,14 +132,15 @@
 ```
 raw/         # 원본 파일(감사·재처리 보존)
 staging/     # 수집 직후 임시
-warehouse/   # Iceberg 테이블 데이터(Parquet) + 메타데이터
+warehouse/iceberg/   # Iceberg 테이블: 데이터(Parquet) + 메타데이터(json) + 매니페스트(avro)
 dlq/         # 파싱 실패 격리
 ```
 
-**파티셔닝**: `production_date`(일) + `line_id` 기준.
+**파티셔닝**: `production_date`(일) + `line_id` 기준(Iceberg identity 파티션).
 
-> **현재 구현 vs 설계**: 지금은 Hive 스타일 **Parquet 파티션**(`production_date=…/line_id=…/data.parquet`)으로
-> 적재한다(DuckDB 변환). 설계 목표인 **Iceberg**(ACID·스키마 진화·스냅샷, `add column` 무중단)는 후속 단계에서 도입한다.
+> **Apache Iceberg 적용 완료**: 적재는 PyIceberg `table.append`(파일은 Parquet), 카탈로그는 PostgreSQL,
+> warehouse는 MinIO/S3. **스키마 진화**(`add column` 무중단)·ACID·스냅샷을 지원하며, 신규 컬럼이 들어오면
+> `GET /agent/tools/schema` 에 **자동 반영**된다. 조회는 DuckDB 확장 없이 **PyArrow 스캔**으로 처리해 폐쇄망에서 동작한다.
 
 ---
 
@@ -165,11 +166,12 @@ data-lake/
 │  ├─ dataset.py         # 데이터셋 계약(컬럼·파티션 키) — production
 │  ├─ schemas.py         # Pydantic 계약 모델(에이전트 격리)
 │  ├─ storage.py         # 스토리지 추상화 (local 기본 / minio 선택)
-│  ├─ catalog.py         # 카탈로그·이력 (sqlite 기본 / postgres 선택)
-│  ├─ catalog_pg.py      # PostgreSQL 카탈로그 구현 (psycopg + 풀)
+│  ├─ catalog.py         # 적재 이력(audit) (sqlite 기본 / postgres 선택)
+│  ├─ catalog_pg.py      # PostgreSQL 이력 구현 (psycopg + 풀)
+│  ├─ iceberg_io.py      # Apache Iceberg 적재/조회/스키마진화 (PyIceberg)
 │  ├─ tasks.py           # 작업 실행 (inprocess 기본 / celery 선택)
 │  ├─ processing.py      # Write Path: parse→validate→Parquet 변환→적재
-│  ├─ query.py           # Read Path: 파티션 프루닝 + DuckDB 집계
+│  ├─ query.py           # Read Path: Iceberg 파티션 프루닝 + PyArrow 집계
 │  ├─ routers/
 │  │  ├─ ingest.py       # POST /ingest, GET /ingest/status/{id}
 │  │  ├─ agent.py        # GET/POST /agent/tools/*
@@ -187,7 +189,7 @@ data-lake/
 ```
 
 > **바로 테스트 가능 설계**: 모든 외부 백엔드(MinIO/Redis/Celery/PostgreSQL)는 *선택*이며,
-> 미설정 시 단일 프로세스에서 동작하는 폴백(로컬 FS · 인프로세스 워커 · SQLite · DuckDB)을 사용한다.
+> 미설정 시 단일 프로세스에서 동작하는 폴백(로컬 FS · 인프로세스 워커 · SQLite · file:// Iceberg warehouse)을 사용한다.
 > 운영 전환 시 환경변수만 바꾸면 실제 미들웨어로 연결된다.
 
 ## 9. 빠른 시작 (venv · 바로 테스트)
@@ -279,8 +281,8 @@ bash middleware.sh stop     # 미들웨어 종료
 | M1 | 미들웨어 기동(PostgreSQL/Redis/MinIO) | ✅ Redis·MinIO 네이티브 가동, PostgreSQL(`lake` 네트워크) 연결 검증 |
 | M2 | Ingestion API + 스토리지 적재 | ✅ `POST /ingest` + 로컬/원본 보존 |
 | M3 | 비동기화(워커) | ✅ 인프로세스 워커 / Celery 전환 가능 |
-| M4 | Parquet 변환 + 카탈로그 | ✅ DuckDB Parquet 파티션 + SQLite/PG 카탈로그 |
-| M5 | DuckDB 서빙 + Tool API 에이전트 연동 | ✅ `/agent/tools/*` 파티션 프루닝 조회 |
+| M4 | Iceberg 테이블 + 카탈로그 | ✅ PyIceberg 적재(MinIO/S3) + PostgreSQL SQL 카탈로그 + **스키마 진화** |
+| M5 | Tool API 에이전트 연동 | ✅ `/agent/tools/*` 파티션 프루닝 조회 + 동적 스키마 |
 | M6 | 운영 배포(네이티브 systemd 전환) | ⬜ |
 | M7 | (선택) Milvus 유사도 검색 | ⬜ |
 

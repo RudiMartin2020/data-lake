@@ -11,6 +11,12 @@ venv/
 .env
 .run/
 
+# 운영 환경 자격증명 — 절대 커밋 금지(공개 저장소)
+docs/운영환경.txt
+*운영환경*
+*_secrets*
+
+
 # 대용량 샘플 데이터(생성기로 재생성 가능) — generate_samples.py 는 추적
 /sample_data/production_10mb.*
 
