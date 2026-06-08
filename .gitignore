@@ -8,8 +8,12 @@ venv/
 
 # 런타임 데이터(로컬 스토리지/SQLite 카탈로그)
 /data/
-.env
 .run/
+
+# 환경 파일 — 자격증명 포함, 절대 커밋 금지 (.env.example 만 예외)
+.env
+.env.*
+!.env.example
 
 # 운영 환경 자격증명 — 절대 커밋 금지(공개 저장소)
 docs/운영환경.txt
