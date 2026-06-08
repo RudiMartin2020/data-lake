@@ -32,7 +32,7 @@ def info() -> dict:
             "task": settings.task_backend,
             "catalog": settings.catalog_backend,
             "table_format": "iceberg" if _has("pyiceberg") else "n/a",
-            "query_engine": "pyarrow",
+            "query_engine": "duckdb" if _has("duckdb") else "pyarrow",
         },
         "iceberg": {
             "namespace": settings.iceberg_namespace,

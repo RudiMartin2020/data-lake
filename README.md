@@ -44,7 +44,7 @@
                   raw/staging/warehouse/dlq               카탈로그 · 적재 이력
 
 [AI Agent / LLM]  --(GET /schema · POST /query)-->  Serving Tool API (FastAPI :8000)
-                                                          |  파티션 프루닝(Iceberg) + PyArrow 집계
+                                                          |  파티션 프루닝(Iceberg) + DuckDB in-memory 집계
                                                           v
                                                      요약 JSON 반환
 ```
@@ -68,7 +68,7 @@
 | Table Format | **Apache Iceberg / PyIceberg** | ACID·스키마 진화·스냅샷 (구현 완료) |
 | File Format | Parquet | predicate/projection pushdown |
 | Catalog | PostgreSQL | Iceberg SQL 카탈로그 + 적재 이력 |
-| Query Engine | **PyArrow** | Iceberg 스캔 결과 집계(별도 서버 불필요, 폐쇄망 안전) |
+| Query Engine | **DuckDB** | PyIceberg 프루닝 결과(PyArrow)를 in-memory SQL 집계. 확장 불필요(폐쇄망 안전) |
 | Vector DB | Milvus (선택) | 유사도 검색(RAG) |
 
 ---
@@ -140,7 +140,8 @@ dlq/         # 파싱 실패 격리
 
 > **Apache Iceberg 적용 완료**: 적재는 PyIceberg `table.append`(파일은 Parquet), 카탈로그는 PostgreSQL,
 > warehouse는 MinIO/S3. **스키마 진화**(`add column` 무중단)·ACID·스냅샷을 지원하며, 신규 컬럼이 들어오면
-> `GET /agent/tools/schema` 에 **자동 반영**된다. 조회는 DuckDB 확장 없이 **PyArrow 스캔**으로 처리해 폐쇄망에서 동작한다.
+> `GET /agent/tools/schema` 에 **자동 반영**된다. 조회는 **PyIceberg 파티션 프루닝 → DuckDB in-memory 집계**(제로카피)
+> 하이브리드로, DuckDB iceberg/httpfs 확장 없이 폐쇄망에서 동작한다.
 
 ---
 
@@ -171,7 +172,7 @@ data-lake/
 │  ├─ iceberg_io.py      # Apache Iceberg 적재/조회/스키마진화 (PyIceberg)
 │  ├─ tasks.py           # 작업 실행 (inprocess 기본 / celery 선택)
 │  ├─ processing.py      # Write Path: parse→validate→Parquet 변환→적재
-│  ├─ query.py           # Read Path: Iceberg 파티션 프루닝 + PyArrow 집계
+│  ├─ query.py           # Read Path: Iceberg 프루닝(PyArrow) + DuckDB in-memory 집계
 │  ├─ routers/
 │  │  ├─ ingest.py       # POST /ingest, GET /ingest/status/{id}
 │  │  ├─ agent.py        # GET/POST /agent/tools/*
