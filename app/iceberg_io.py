@@ -1,8 +1,8 @@
-"""Apache Iceberg 입출력 — 카탈로그/테이블/적재/조회.
+"""Apache Iceberg 입출력 — 카탈로그/테이블/적재/조회 (멀티 데이터셋).
 
 - 카탈로그: PyIceberg `SqlCatalog` (catalog_backend=postgres → PostgreSQL, 아니면 SQLite)
 - warehouse: storage_backend=minio → s3://(MinIO), 아니면 file://(로컬)
-- 파티션: production_date + line_id (identity) → 조회 시 파티션 프루닝
+- 테이블: dataset 당 1개 (`lake.<dataset>`), 파티션 = dataset.partition_keys (identity)
 - 스키마 진화: 적재 데이터에 새 컬럼이 있으면 union_by_name 으로 무중단 추가
 
 순수 PyArrow/PyIceberg 만 사용(DuckDB 확장 불필요) → 폐쇄망 동작.
@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import threading
 import time
+from functools import reduce
 
 import pyarrow as pa
 from pyiceberg.catalog.sql import SqlCatalog
@@ -24,14 +25,14 @@ from pyiceberg.expressions import And, EqualTo
 from pyiceberg.transforms import IdentityTransform
 
 from .config import settings
-from .dataset import DATASET_NAME, PARTITION_KEYS
+from .dataset import get_dataset
 
 _lock = threading.Lock()
 _catalog = None
 
 
-def _identifier() -> str:
-    return f"{settings.iceberg_namespace}.{DATASET_NAME}"
+def _identifier(dataset: str) -> str:
+    return f"{settings.iceberg_namespace}.{dataset}"
 
 
 def get_catalog():
@@ -57,10 +58,10 @@ def _ensure_namespace(cat) -> None:
         pass
 
 
-def _load_or_create(create_from: "pa.Schema | None"):
+def _load_or_create(dataset: str, create_from: "pa.Schema | None"):
     """테이블 로드. 없으면 create_from(arrow schema)로 생성(+파티션 스펙)."""
     cat = get_catalog()
-    ident = _identifier()
+    ident = _identifier(dataset)
     try:
         return cat.load_table(ident)
     except NoSuchTableError:
@@ -72,11 +73,12 @@ def _load_or_create(create_from: "pa.Schema | None"):
             except NoSuchTableError:
                 _ensure_namespace(cat)
                 try:
-                    t = cat.create_table(ident, schema=create_from)
+                    cat.create_table(ident, schema=create_from)
                 except TableAlreadyExistsError:
                     return cat.load_table(ident)
-                with t.update_spec() as us:
-                    for k in PARTITION_KEYS:
+                tbl = cat.load_table(ident)
+                with tbl.update_spec() as us:
+                    for k in get_dataset(dataset).partition_keys:
                         us.add_field(k, IdentityTransform(), f"{k}_p")
                 return cat.load_table(ident)
 
@@ -93,19 +95,19 @@ def _align_to_table(at: pa.Table, table_schema: pa.Schema) -> pa.Table:
     return pa.table(arrays, schema=table_schema)
 
 
-def append_arrow(at: pa.Table, retries: int = 3) -> int:
-    """arrow 테이블을 Iceberg 에 적재. 새 컬럼은 스키마 진화로 추가.
+def append_arrow(dataset: str, at: pa.Table, retries: int = 3) -> int:
+    """arrow 테이블을 dataset 의 Iceberg 테이블에 적재. 새 컬럼은 스키마 진화로 추가.
 
-    반환: 적재 데이터의 파티션 수(distinct production_date+line_id).
+    반환: 적재 데이터의 파티션 수(distinct partition_keys).
     """
+    pkeys = get_dataset(dataset).partition_keys
     for attempt in range(retries):
-        tbl = _load_or_create(create_from=at.schema)
-        # 스키마 진화: 적재 데이터에 새 컬럼이 있으면 union(무중단 add column)
+        tbl = _load_or_create(dataset, create_from=at.schema)
         existing = {f.name for f in tbl.schema().fields}
         if any(name not in existing for name in at.schema.names):
             with tbl.update_schema() as us:
                 us.union_by_name(at.schema)
-            tbl = get_catalog().load_table(_identifier())  # 진화 반영본 재로드
+            tbl = get_catalog().load_table(_identifier(dataset))
         aligned = _align_to_table(at, tbl.schema().as_arrow())
         try:
             tbl.append(aligned)
@@ -115,28 +117,26 @@ def append_arrow(at: pa.Table, retries: int = 3) -> int:
                 raise
             time.sleep(0.2 * (attempt + 1))  # 동시 커밋 충돌 → 재시도
 
-    # 파티션 수
-    keys = at.select(PARTITION_KEYS)
-    return keys.group_by(PARTITION_KEYS).aggregate([]).num_rows
+    return at.select(pkeys).group_by(pkeys).aggregate([]).num_rows
 
 
-def scan_partition(production_date: str, line_id: str, limit: int) -> "pa.Table | None":
-    """파티션 프루닝 조회. 테이블 미존재 시 None."""
+def scan_partition(dataset: str, filters: dict, limit: int) -> "pa.Table | None":
+    """파티션 프루닝 조회(filters: 파티션키→값). 테이블 미존재 시 None."""
     cat = get_catalog()
     try:
-        tbl = cat.load_table(_identifier())
+        tbl = cat.load_table(_identifier(dataset))
     except NoSuchTableError:
         return None
-    flt = And(EqualTo("production_date", production_date), EqualTo("line_id", line_id))
-    scan = tbl.scan(row_filter=flt, limit=limit)
-    return scan.to_arrow()
+    exprs = [EqualTo(k, v) for k, v in filters.items()]
+    row_filter = reduce(And, exprs) if len(exprs) > 1 else exprs[0]
+    return tbl.scan(row_filter=row_filter, limit=limit).to_arrow()
 
 
-def current_schema_fields():
+def current_schema_fields(dataset: str):
     """현재 Iceberg 테이블 스키마(컬럼명, 타입). 테이블 미존재 시 None."""
     cat = get_catalog()
     try:
-        tbl = cat.load_table(_identifier())
+        tbl = cat.load_table(_identifier(dataset))
     except NoSuchTableError:
         return None
     return [(f.name, str(f.field_type)) for f in tbl.schema().fields]

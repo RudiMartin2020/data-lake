@@ -70,13 +70,14 @@ def test_ingest_then_query():
     # 4) 에이전트 조회 → 요약 JSON
     q = client.post(
         "/agent/tools/query",
-        json={"production_date": "2026-05-29", "line_id": "FAB-1"},
+        json={"dataset": "production",
+              "filters": {"production_date": "2026-05-29", "line_id": "FAB-1"}},
     )
     assert q.status_code == 200
     s = q.json()
     assert s["found"] is True
-    assert s["total_qty"] == 1000          # 500+300+200
-    assert s["total_defect_qty"] == 20     # 12+5+3
+    assert s["totals"]["qty"] == 1000          # 500+300+200
+    assert s["totals"]["defect_qty"] == 20     # 12+5+3
     assert s["row_count"] == 3
 
 
@@ -103,9 +104,10 @@ def test_schema_evolution():
     # 기존 데이터 + 신규 합산(1000 + 100), 행 3 + 1
     q = client.post(
         "/agent/tools/query",
-        json={"production_date": "2026-05-29", "line_id": "FAB-1"},
+        json={"dataset": "production",
+              "filters": {"production_date": "2026-05-29", "line_id": "FAB-1"}},
     ).json()
-    assert q["total_qty"] == 1100
+    assert q["totals"]["qty"] == 1100
     assert q["row_count"] == 4
 
 
@@ -113,15 +115,23 @@ def test_query_input_validation():
     # 화이트리스트 위반(경로 주입 시도) → 422
     bad = client.post(
         "/agent/tools/query",
-        json={"production_date": "2026-05-29", "line_id": "../etc"},
+        json={"dataset": "production",
+              "filters": {"production_date": "2026-05-29", "line_id": "../etc"}},
     )
     assert bad.status_code == 422
+    # 알 수 없는 dataset → 422
+    bad2 = client.post(
+        "/agent/tools/query",
+        json={"dataset": "nope", "filters": {"production_date": "2026-05-29", "line_id": "FAB-1"}},
+    )
+    assert bad2.status_code == 422
 
 
 def test_query_missing_partition():
     q = client.post(
         "/agent/tools/query",
-        json={"production_date": "1999-01-01", "line_id": "FAB-9"},
+        json={"dataset": "production",
+              "filters": {"production_date": "1999-01-01", "line_id": "FAB-9"}},
     )
     assert q.json()["found"] is False
 
@@ -134,12 +144,51 @@ def test_query_limit_cap():
     try:
         q = client.post(
             "/agent/tools/query",
-            json={"production_date": "2026-05-29", "line_id": "FAB-1", "limit": 1000},
+            json={"dataset": "production",
+                  "filters": {"production_date": "2026-05-29", "line_id": "FAB-1"},
+                  "limit": 1000},
         ).json()
         # 클램프(2)로 스캔 → row_count <= 2
         assert q["row_count"] <= 2
     finally:
         settings.query_row_limit = 10000
+
+
+def test_multi_dataset():
+    """두 번째 데이터셋(sensor_readings)이 production 과 독립적으로 적재/조회된다."""
+    sensor = (
+        "reading_date,sensor_id,metric,value\n"
+        "2026-06-09,S-1,temperature,21.5\n"
+        "2026-06-09,S-1,temperature,22.5\n"
+        "2026-06-09,S-1,humidity,40.0\n"
+    )
+    r = client.post(
+        "/ingest",
+        files={"file": ("s.csv", sensor, "text/csv")},
+        data={"source_id": "sensor-bot", "dataset": "sensor_readings"},
+    )
+    assert r.status_code == 202
+    assert r.json()["dataset"] == "sensor_readings"
+    done = _wait_done(r.json()["task_id"])
+    assert done["status"] == "done", done
+
+    # 스키마(sensor_readings)
+    sc = client.get("/agent/tools/schema", params={"dataset": "sensor_readings"}).json()
+    assert sc["dataset"] == "sensor_readings"
+    assert sc["partition_keys"] == ["reading_date", "sensor_id"]
+
+    # 조회: value 합계 = 21.5+22.5+40.0 = 84.0, row_count=3
+    q = client.post(
+        "/agent/tools/query",
+        json={"dataset": "sensor_readings",
+              "filters": {"reading_date": "2026-06-09", "sensor_id": "S-1"}},
+    ).json()
+    assert q["found"] is True
+    assert q["row_count"] == 3
+    assert abs(q["totals"]["value"] - 84.0) < 1e-6
+    # 그룹(metric)별 — temperature 2건 합 44.0
+    by_metric = {g["metric"]: g["value"] for g in q["groups"]}
+    assert abs(by_metric["temperature"] - 44.0) < 1e-6
 
 
 def test_metrics_endpoint():

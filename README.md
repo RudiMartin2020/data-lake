@@ -149,9 +149,10 @@ dlq/         # 파싱 실패 격리
 
 | Method / Path | 설명 |
 |---|---|
-| `POST /ingest` | 원천 데이터 비동기 수집. `202 Accepted` + `{task_id, status}` 즉시 응답 후 워커가 백그라운드 처리 |
-| `GET /agent/tools/schema` | 카탈로그 컬럼/메타데이터를 JSON Schema로 반환 |
-| `POST /agent/tools/query` | 계약된 인자값(`{"production_date":"2026-05-29","line_id":"FAB-1"}`)으로 조회 → 요약 JSON 반환 |
+| `POST /ingest` | 원천 데이터 비동기 수집(`file`+`source_id`+`dataset`). `202 Accepted` + `{task_id, status}` 즉시 응답 후 워커가 백그라운드 처리 |
+| `GET /agent/tools/datasets` | 사용 가능한 데이터셋·파티션 키 목록 |
+| `GET /agent/tools/schema?dataset=` | 지정 데이터셋의 컬럼/메타데이터를 JSON Schema로 반환 |
+| `POST /agent/tools/query` | 계약 인자(`{"dataset":"production","filters":{"production_date":"2026-05-29","line_id":"FAB-1"}}`)로 조회 → 요약 JSON(totals/groups) |
 | `POST /ingest/reprocess/{task_id}` | 실패(DLQ) 건을 보존된 원본(raw/)에서 재적재 |
 | `GET /metrics` | Prometheus 메트릭(수집/완료/실패/재시도/쿼리 카운터 + 큐 깊이) |
 

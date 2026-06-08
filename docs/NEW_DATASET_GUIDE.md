@@ -2,6 +2,10 @@
 
 새 데이터가 들어왔을 때 **무엇을 바꿔야 하는지** 판단하고 처리하는 런북.
 
+> ✅ **멀티 데이터셋(경로 B) 구현 완료**. 현재 `production` + `sensor_readings` 2종이 공존하며,
+> 새 데이터셋은 `app/dataset.py` 의 `DATASETS` 에 **항목 하나만 추가**하면 적재/조회가 동작한다.
+> 적재 시 `-F "dataset=<이름>"`, 조회 시 `{"dataset":..., "filters":{...}}`.
+
 ---
 
 ## 0. 먼저 — "변화"의 종류를 구분하라
@@ -24,18 +28,20 @@
 
 ---
 
-## 1. 현재 구조 (단일 데이터셋)
+## 1. 현재 구조 (멀티 데이터셋 — 구현됨)
 
-지금은 `production` 한 개가 **코드에 고정**되어 있다.
+`app/dataset.py` 의 `DATASETS` 레지스트리가 데이터셋별 파티션 키·필수 컬럼·집계(measure)·그룹키를 선언한다.
+파이프라인(수집/적재/조회)은 전부 `dataset` 인자로 일반화되어 있다.
 
-| 고정 위치 | 내용 |
+| 위치 | 역할 |
 |---|---|
-| `app/dataset.py` | `DATASET_NAME="production"`, 컬럼/`PARTITION_KEYS`/`REQUIRED_COLUMNS` |
-| `app/schemas.py` | `QueryRequest`가 `production_date`+`line_id`를 **고정 필드**로 가짐 |
-| `app/iceberg_io.py` | 테이블 1개(`lake.production`), 파티션 스펙 = `PARTITION_KEYS` |
-| `app/routers/ingest.py` | `dataset=DATASET_NAME` 고정 |
+| `app/dataset.py` | **`DATASETS` 레지스트리** (데이터셋 정의) |
+| `app/routers/ingest.py` | `dataset` Form 인자 + 검증 |
+| `app/iceberg_io.py` | `lake.<dataset>` 테이블, 파티션 = `partition_keys` |
+| `app/query.py` | `measures`/`group_by` 기반 일반 집계 |
+| `app/schemas.py` | `QueryRequest(dataset+filters)` / `QuerySummary(totals/groups)` |
 
-→ 그래서 **다른 파티션 키를 가진 새 데이터셋**은 코드 변경이 필요하다.
+→ **새 데이터셋 = `DATASETS` 에 항목 추가** (§B). 다른 파티션 키도 OK.
 
 ---
 

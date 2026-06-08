@@ -1,67 +1,72 @@
-"""Read Path — 서빙 쿼리 엔진 (Iceberg 프루닝 + DuckDB in-memory 집계).
+"""Read Path — 서빙 쿼리 엔진 (Iceberg 프루닝 + DuckDB in-memory 집계, 멀티 데이터셋).
 
-하이브리드 설계:
-  1) PyIceberg 가 파티션 프루닝(해당 production_date/line_id 만)으로 PyArrow 테이블을 읽고
+  1) PyIceberg 가 파티션 프루닝(filters)으로 PyArrow 테이블을 읽고
   2) DuckDB 가 그 PyArrow 테이블을 in-memory 로 SQL 집계한다(제로카피).
 
-DuckDB iceberg/httpfs 확장이 필요 없으므로 폐쇄망(C-1)에서 동작하며,
-요구 스택의 "DuckDB(in-memory 기반 파티션 조회)"를 충족한다.
-임의 SQL 은 노출하지 않는다(고정 집계 쿼리).
+집계 대상(measures)·그룹 기준(group_by)은 dataset 레지스트리에서 가져온다.
+DuckDB iceberg/httpfs 확장이 필요 없으므로 폐쇄망에서 동작한다.
 """
 from __future__ import annotations
 
 import duckdb
 
 from . import metrics
-from .dataset import DATASET_NAME
+from .dataset import get_dataset
 from .iceberg_io import scan_partition
 from .schemas import QueryRequest, QuerySummary
 
-_TOTALS_SQL = (
-    "SELECT COUNT(*), "
-    "COALESCE(SUM(CAST(qty AS BIGINT)), 0), "
-    "COALESCE(SUM(CAST(defect_qty AS BIGINT)), 0) FROM part"
-)
-_PRODUCTS_SQL = (
-    "SELECT product_id, "
-    "SUM(CAST(qty AS BIGINT)) AS qty, "
-    "SUM(CAST(defect_qty AS BIGINT)) AS defect_qty "
-    "FROM part GROUP BY product_id ORDER BY qty DESC"
-)
+
+def _agg_expr(ds, alias_prefix: str = "") -> str:
+    parts = []
+    for m in ds.measures:
+        cast = "BIGINT" if ds.is_integer_measure(m) else "DOUBLE"
+        parts.append(f"SUM(CAST({m} AS {cast})) AS {m}")
+    return ", ".join(parts)
 
 
 def run_query(req: QueryRequest) -> QuerySummary:
     metrics.QUERY_TOTAL.inc()
-    pdate = req.production_date.isoformat()
-    summary = QuerySummary(
-        dataset=DATASET_NAME,
-        production_date=req.production_date,
-        line_id=req.line_id,
-        found=False,
-    )
+    ds = get_dataset(req.dataset)
+    summary = QuerySummary(dataset=req.dataset, filters=req.filters, found=False)
 
-    # 1) PyIceberg 파티션 프루닝 → PyArrow (S3/메타데이터는 PyIceberg 가 처리)
-    part = scan_partition(pdate, req.line_id, req.limit)
+    # 1) 파티션 프루닝 → PyArrow
+    part = scan_partition(req.dataset, req.filters, req.limit)
     if part is None or part.num_rows == 0:
         summary.note = "해당 파티션에 데이터가 없습니다."
         return summary
 
-    # 2) DuckDB in-memory 집계 (PyArrow 제로카피 등록 — 확장 불필요)
+    # 2) DuckDB in-memory 집계
     con = duckdb.connect()
     try:
         con.register("part", part)
-        row_count, total_qty, total_defect = con.execute(_TOTALS_SQL).fetchone()
-        products = con.execute(_PRODUCTS_SQL).fetchall()
+        agg = _agg_expr(ds)
+        totals_row = con.execute(f"SELECT COUNT(*), {agg} FROM part").fetchone()
+        groups = con.execute(
+            f"SELECT {ds.group_by}, {agg} FROM part GROUP BY {ds.group_by} "
+            f"ORDER BY {ds.measures[0]} DESC"
+        ).fetchall()
+        group_cols = [d[0] for d in con.description]
     finally:
         con.close()
 
-    summary.row_count = int(row_count)
-    summary.total_qty = int(total_qty)
-    summary.total_defect_qty = int(total_defect)
-    summary.products = [
-        {"product_id": p[0], "qty": int(p[1]), "defect_qty": int(p[2])} for p in products
+    summary.row_count = int(totals_row[0])
+    summary.totals = {m: _num(totals_row[i + 1], ds.is_integer_measure(m))
+                      for i, m in enumerate(ds.measures)}
+    summary.groups = [
+        {col: _maybe_num(col, val, ds) for col, val in zip(group_cols, row)}
+        for row in groups
     ]
     summary.found = summary.row_count > 0
-    if summary.total_qty > 0:
-        summary.defect_rate = round(summary.total_defect_qty / summary.total_qty, 4)
     return summary
+
+
+def _num(v, is_int: bool):
+    if v is None:
+        return 0 if is_int else 0.0
+    return int(v) if is_int else float(v)
+
+
+def _maybe_num(col: str, val, ds):
+    if col in ds.measures:
+        return _num(val, ds.is_integer_measure(col))
+    return val

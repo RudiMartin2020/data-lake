@@ -18,7 +18,7 @@ import pyarrow.csv as pacsv
 from . import metrics
 from .audit import audit
 from .config import settings
-from .dataset import REQUIRED_COLUMNS
+from .dataset import get_dataset
 from .iceberg_io import append_arrow
 from .storage import storage
 
@@ -37,8 +37,8 @@ def _read_csv(data: bytes) -> pa.Table:
     return pacsv.read_csv(io.BytesIO(data))
 
 
-def _validate(names: List[str]) -> None:
-    missing = [c for c in REQUIRED_COLUMNS if c not in names]
+def _validate(dataset: str, names: List[str]) -> None:
+    missing = [c for c in get_dataset(dataset).required if c not in names]
     if missing:
         raise ValidationError(f"필수 컬럼 누락: {missing} (헤더={names})")
 
@@ -53,7 +53,7 @@ def _to_dlq(task_id: str, raw_key: str, raw_bytes: bytes, error: str) -> None:
     logger.warning("적재 실패(DLQ) task=%s: %s", task_id, error)
 
 
-def process_ingestion(task_id: str, raw_key: str, raw_bytes: bytes) -> None:
+def process_ingestion(task_id: str, raw_key: str, raw_bytes: bytes, dataset: str) -> None:
     """단일 적재 작업.
 
     - 파싱/검증 실패 → DLQ + failed (반환, 재시도 안 함)
@@ -64,21 +64,22 @@ def process_ingestion(task_id: str, raw_key: str, raw_bytes: bytes) -> None:
     # 1) 파싱·검증 (영구 실패 영역)
     try:
         at = _read_csv(raw_bytes)
-        _validate(at.schema.names)
+        _validate(dataset, at.schema.names)
     except Exception as exc:  # noqa: BLE001 — 영구 실패 → DLQ
         _to_dlq(task_id, raw_key, raw_bytes, f"validation: {exc}")
         return
 
     # 2) 적재 (일시 실패 영역 → 재시도 대상)
     try:
-        partitions = append_arrow(at)
+        partitions = append_arrow(dataset, at)
     except Exception as exc:  # noqa: BLE001
         logger.warning("적재 일시 오류(재시도 대상) task=%s: %s", task_id, exc)
         raise TransientError(str(exc)) from exc
 
     audit.update(task_id, status="done", rows=at.num_rows, partitions=partitions)
     metrics.INGEST_DONE.inc()
-    logger.info("적재 완료 task=%s rows=%d partitions=%d", task_id, at.num_rows, partitions)
+    logger.info("적재 완료 task=%s dataset=%s rows=%d partitions=%d",
+                task_id, dataset, at.num_rows, partitions)
 
 
 def fail_transient(task_id: str, raw_key: str, raw_bytes: bytes, error: str) -> None:
