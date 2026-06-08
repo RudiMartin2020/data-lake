@@ -10,10 +10,12 @@ venv/
 /data/
 .run/
 
-# 환경 파일 — 자격증명 포함, 절대 커밋 금지 (.env.example 만 예외)
+# 환경 파일 — 실 자격증명 파일(.env)은 커밋 금지.
+# 템플릿(.env.example / .env.production)은 자리표시자만 담아 추적 허용.
 .env
 .env.*
 !.env.example
+!.env.production
 
 # 운영 환경 자격증명 — 절대 커밋 금지(공개 저장소)
 docs/운영환경.txt
