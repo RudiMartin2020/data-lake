@@ -44,9 +44,25 @@ class Settings:
     # --- Redis / Celery (task_backend == "celery") ---
     redis_url: str = _env("REDIS_URL", "redis://localhost:6379/0")
 
-    # --- PostgreSQL (catalog_backend == "postgres") ---
-    # 예: postgresql://flopi_adm:****@localhost:5432/flopi
-    postgres_dsn: str = _env("POSTGRES_DSN", "")
+    # --- PostgreSQL (catalog_backend == "postgres") — 운영 표준 분리형 변수명 ---
+    # 우선순위: POSTGRES_DSN(단일) > PG_* (분리형)
+    pg_host: str = _env("PG_HOST", "")
+    pg_port: str = _env("PG_PORT", "5432")
+    pg_user: str = _env("PG_USER", "")
+    pg_password: str = _env("PG_PASSWORD", "")
+    pg_db: str = _env("PG_DB", "")
+    _postgres_dsn_explicit: str = _env("POSTGRES_DSN", "")
+
+    @property
+    def postgres_dsn(self) -> str:
+        if self._postgres_dsn_explicit:
+            return self._postgres_dsn_explicit
+        if self.pg_host and self.pg_user:
+            return (
+                f"postgresql://{self.pg_user}:{self.pg_password}"
+                f"@{self.pg_host}:{self.pg_port}/{self.pg_db}"
+            )
+        return ""
 
     # --- 조회 안전장치 ---
     query_row_limit: int = int(_env("QUERY_ROW_LIMIT", "10000"))
