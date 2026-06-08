@@ -316,7 +316,15 @@ bash middleware.sh stop     # 미들웨어 종료
 
 ---
 
+## 문서
+
+| 문서 | 내용 |
+|---|---|
+| [기술 설계서](docs/RPA_Data_to_AI_기술설계서_NoDocker.md) | 아키텍처·요구사항 |
+| [테스트 시나리오](docs/TEST_SCENARIOS.md) · [결과](docs/TEST_RESULTS.md) | TS-01~10 + 실행 결과 |
+| [Windows 테스트 가이드](docs/WINDOWS_TEST_GUIDE.md) | PowerShell 기준 테스트 절차 |
+| [새 데이터셋 가이드](docs/NEW_DATASET_GUIDE.md) | 새 데이터셋/형식/컬럼 처리 방법 |
+
 ## 저장소
 
 - Git: `https://github.com/RudiMartin2020/data-lake.git`
-- 문서: [`docs/`](docs/)
