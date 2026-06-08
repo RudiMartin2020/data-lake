@@ -224,9 +224,9 @@ cd /workspace/data-lake
 
 # 0) venv 생성 + 의존성 설치 (최초 1회) — uv + Python 3.12.12
 bash setup.sh
-#   또는 수동(uv):
-#   uv python install 3.12.12
-#   uv venv --python 3.12.12 .venv && uv pip install -r requirements.txt
+#   또는 수동:
+#   uv sync                                   # pyproject.toml + uv.lock (권장)
+#   # (pip 전용) uv venv && uv pip install -r requirements.txt
 
 # (선택) 셸에 venv 활성화 — 이후 python/pytest/uvicorn 을 바로 사용
 source .venv/bin/activate

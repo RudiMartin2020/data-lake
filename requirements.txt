@@ -1,3 +1,7 @@
+# ⚠️ 의존성 정의의 소스는 pyproject.toml + uv.lock 입니다(uv sync 권장).
+#    이 파일은 pip 전용/폐쇄망 휠하우스(pip download)용 호환 목록입니다.
+#    설치:  uv sync   (또는)   uv pip install -r requirements.txt
+#
 # --- 코어 (필수, 단일 프로세스 테스트에 충분) ---
 fastapi>=0.110
 uvicorn[standard]>=0.27
