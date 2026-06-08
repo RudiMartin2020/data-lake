@@ -215,6 +215,7 @@ docker exec -it centos9 bash
 > **Windows 런처(선택)**: 매번 `docker exec` 대신 PowerShell 래퍼 사용 가능 —
 > `.\scripts\win\setup.ps1` · `.\scripts\win\middleware.ps1 start|status|stop` · `.\scripts\win\run.ps1`.
 > (앱은 Linux `.venv`에서 구동되므로 래퍼는 내부적으로 `docker exec … bash`를 호출한다.)
+> 📘 Windows 테스트 전체 절차: [`docs/WINDOWS_TEST_GUIDE.md`](docs/WINDOWS_TEST_GUIDE.md)
 
 ```bash
 # (컨테이너 내부) /workspace/data-lake
