@@ -5,8 +5,7 @@
 
   - STORAGE_BACKEND : "local"(기본) | "minio"
   - TASK_BACKEND    : "inprocess"(기본) | "celery"
-  - CATALOG_BACKEND : "sqlite"(기본) | "postgres"
-  - QUERY_ENGINE    : "duckdb"(설치 시 자동) | "stdlib"(폴백)
+  - CATALOG_BACKEND : "sqlite"(기본) | "postgres"   # audit + Iceberg 카탈로그 백엔드
 """
 from __future__ import annotations
 
@@ -26,7 +25,6 @@ class Settings:
 
     # MinIO 버킷에 해당하는 논리 디렉터리 이름
     bucket_raw: str = "raw"
-    bucket_staging: str = "staging"
     bucket_warehouse: str = "warehouse"
     bucket_dlq: str = "dlq"
 
@@ -106,24 +104,8 @@ class Settings:
         }
 
     @property
-    def raw_dir(self) -> Path:
-        return self.data_root / self.bucket_raw
-
-    @property
-    def staging_dir(self) -> Path:
-        return self.data_root / self.bucket_staging
-
-    @property
-    def warehouse_dir(self) -> Path:
-        return self.data_root / self.bucket_warehouse
-
-    @property
-    def dlq_dir(self) -> Path:
-        return self.data_root / self.bucket_dlq
-
-    @property
     def sqlite_path(self) -> Path:
-        return self.data_root / "catalog.db"
+        return self.data_root / "audit.db"
 
 
 settings = Settings()

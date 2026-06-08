@@ -15,7 +15,6 @@ from __future__ import annotations
 from concurrent.futures import ThreadPoolExecutor
 
 from . import metrics
-from .catalog import catalog
 from .config import settings
 from .processing import TransientError, fail_transient, process_ingestion
 

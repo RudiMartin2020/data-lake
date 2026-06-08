@@ -23,9 +23,6 @@ PARTITION_KEYS: List[str] = ["production_date", "line_id"]
 # 적재 시 반드시 존재해야 하는 컬럼
 REQUIRED_COLUMNS: List[str] = list(PRODUCTION_COLUMNS.keys())
 
-# 정수 집계 대상 컬럼
-NUMERIC_COLUMNS: List[str] = ["qty", "defect_qty"]
-
 DATASET_NAME = "production"
 
 

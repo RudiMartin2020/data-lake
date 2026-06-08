@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, s
 
 from .. import metrics
 from ..auth import verify_ingest
-from ..catalog import catalog
+from ..audit import audit
 from ..config import settings
 from ..dataset import DATASET_NAME
 from ..schemas import IngestAccepted, TaskStatus
@@ -28,7 +28,7 @@ async def ingest(file: UploadFile = File(...), source_id: str = Form(...)) -> In
     content_hash = hashlib.sha256(raw).hexdigest()
 
     # 멱등성: 동일 content_hash 중복 적재 방지(설계서 4.1)
-    dup = catalog.find_by_hash(content_hash)
+    dup = audit.find_by_hash(content_hash)
     if dup:
         metrics.INGEST_DUPLICATE.inc()
         return IngestAccepted(
@@ -45,7 +45,7 @@ async def ingest(file: UploadFile = File(...), source_id: str = Form(...)) -> In
 
     # 원본 보존(raw/) — 감사·재처리
     storage.put_bytes(settings.bucket_raw, raw_key, raw)
-    catalog.create(
+    audit.create(
         task_id=task_id,
         dataset=DATASET_NAME,
         source_id=source_id,
@@ -68,7 +68,7 @@ async def ingest(file: UploadFile = File(...), source_id: str = Form(...)) -> In
 
 @router.get("/ingest/status/{task_id}", response_model=TaskStatus)
 def ingest_status(task_id: str) -> TaskStatus:
-    rec = catalog.get(task_id)
+    rec = audit.get(task_id)
     if not rec:
         raise HTTPException(status_code=404, detail="task_id 를 찾을 수 없습니다.")
     return TaskStatus(
@@ -85,7 +85,7 @@ def ingest_status(task_id: str) -> TaskStatus:
              status_code=status.HTTP_202_ACCEPTED)
 def reprocess(task_id: str) -> IngestAccepted:
     """실패(DLQ) 건을 보존된 원본(raw/)에서 재적재한다(설계서 §8 재처리 경로)."""
-    rec = catalog.get(task_id)
+    rec = audit.get(task_id)
     if not rec:
         raise HTTPException(status_code=404, detail="task_id 를 찾을 수 없습니다.")
     if rec["status"] != "failed":
@@ -97,7 +97,7 @@ def reprocess(task_id: str) -> IngestAccepted:
     except Exception:
         raise HTTPException(status_code=410, detail="원본(raw) 보존본을 찾을 수 없습니다.")
 
-    catalog.update(task_id, status="accepted", error=None)
+    audit.update(task_id, status="accepted", error=None)
     enqueue(task_id, raw_key, raw)
     metrics.INGEST_ACCEPTED.inc()
     return IngestAccepted(

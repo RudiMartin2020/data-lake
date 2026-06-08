@@ -1,7 +1,7 @@
-"""카탈로그 / 적재 이력(audit).
+"""적재 이력(audit) 저장소.
 
-기본: SQLite (stdlib, 추가 서비스 불필요)
-선택: PostgreSQL (CATALOG_BACKEND=postgres, POSTGRES_DSN 설정 시)
+Iceberg "카탈로그"(iceberg_io)와 구분되는, 수집 작업의 상태/이력 기록.
+기본: SQLite (stdlib). 선택: PostgreSQL (CATALOG_BACKEND=postgres).
 
 테이블: ingestions(task_id, dataset, source_id, content_hash, rows,
                     partitions, status, error, created_at, updated_at)
@@ -37,7 +37,7 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-class SqliteCatalog:
+class SqliteAudit:
     def __init__(self) -> None:
         settings.data_root.mkdir(parents=True, exist_ok=True)
         self._lock = threading.Lock()
@@ -85,14 +85,14 @@ class SqliteCatalog:
         return dict(row) if row else None
 
 
-def get_catalog():
+def get_audit():
     if settings.catalog_backend == "postgres":
         # 운영 전환 지점. 접속 실패 시 조용히 폴백하지 않고 예외를 올린다(설정 오류 가시화).
-        from .catalog_pg import PostgresCatalog  # type: ignore
-        return PostgresCatalog()
+        from .audit_pg import PostgresAudit  # type: ignore
+        return PostgresAudit()
     if settings.catalog_backend == "sqlite":
-        return SqliteCatalog()
+        return SqliteAudit()
     raise ValueError(f"알 수 없는 CATALOG_BACKEND: {settings.catalog_backend}")
 
 
-catalog = get_catalog()
+audit = get_audit()

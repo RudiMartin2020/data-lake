@@ -25,3 +25,6 @@ psycopg-pool>=3.2
 # --- 테스트 ---
 httpx>=0.27
 pytest>=8.0
+
+# --- 샘플 데이터 생성기(선택, sample_data/generate_samples.py) ---
+openpyxl>=3.1

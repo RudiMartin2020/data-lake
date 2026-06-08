@@ -53,7 +53,7 @@ def get_catalog():
 def _ensure_namespace(cat) -> None:
     try:
         cat.create_namespace(settings.iceberg_namespace)
-    except (NamespaceAlreadyExistsError, Exception):
+    except NamespaceAlreadyExistsError:
         pass
 
 

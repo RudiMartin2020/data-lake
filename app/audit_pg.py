@@ -1,6 +1,6 @@
-"""PostgreSQL 카탈로그 / 적재 이력 (CATALOG_BACKEND=postgres).
+"""PostgreSQL 적재 이력(audit) 저장소 (CATALOG_BACKEND=postgres).
 
-SqliteCatalog 와 동일한 인터페이스(create/update/get/find_by_hash)를 제공한다.
+SqliteAudit 와 동일한 인터페이스(create/update/get/find_by_hash)를 제공한다.
 psycopg(v3) 사용. POSTGRES_DSN 으로 접속.
 
   예: postgresql://flopi_adm:****@host:5432/flopi
@@ -40,7 +40,7 @@ def _now():
     return datetime.now(timezone.utc)
 
 
-class PostgresCatalog:
+class PostgresAudit:
     def __init__(self) -> None:
         if not settings.postgres_dsn:
             raise RuntimeError("CATALOG_BACKEND=postgres 인데 POSTGRES_DSN 이 비어 있습니다.")

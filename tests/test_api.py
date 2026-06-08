@@ -126,6 +126,22 @@ def test_query_missing_partition():
     assert q.json()["found"] is False
 
 
+def test_query_limit_cap():
+    """limit 은 QUERY_ROW_LIMIT 설정으로 클램프된다."""
+    from app.config import settings
+
+    settings.query_row_limit = 2
+    try:
+        q = client.post(
+            "/agent/tools/query",
+            json={"production_date": "2026-05-29", "line_id": "FAB-1", "limit": 1000},
+        ).json()
+        # 클램프(2)로 스캔 → row_count <= 2
+        assert q["row_count"] <= 2
+    finally:
+        settings.query_row_limit = 10000
+
+
 def test_metrics_endpoint():
     body = client.get("/metrics").text
     assert "ingest_accepted_total" in body

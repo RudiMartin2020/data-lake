@@ -246,39 +246,38 @@ $PSQL -c "SELECT date_trunc('minute',updated_at) m, COUNT(*) done FROM ingestion
 ```
 **기대**: 상태별 건수/행수 합계가 적재 시도와 일치. `done` 건의 `rows/partitions` 가 채워져 있음.
 
-> **모드 A(SQLite)**: `sqlite3 ./data/catalog.db "SELECT status, count(*) FROM ingestions GROUP BY status;"`
-> (sqlite3 CLI 없으면 `.venv/bin/python -c "import sqlite3;print(sqlite3.connect('data/catalog.db').execute('select status,count(*) from ingestions group by status').fetchall())"`)
+> **모드 A(SQLite)**: 적재 이력 DB 는 `./data/audit.db`
+> `.venv/bin/python -c "import sqlite3;print(sqlite3.connect('data/audit.db').execute('select status,count(*) from ingestions group by status').fetchall())"`
 
 ---
 
 ## TS-09. 적재 현황 — MinIO 객체  *(모드 B)*
 
 ```bash
-# 버킷별 객체 수 / 총 용량 / warehouse 파티션 수
+# 버킷별 객체 수 / 총 용량 / Iceberg warehouse 파티션 수
 .venv/bin/python - <<'PY'
 from minio import Minio
 c = Minio("localhost:9000", access_key="minioadmin", secret_key="minioadmin", secure=False)
-for b in ["raw","staging","warehouse","dlq"]:
+for b in ["raw","warehouse","dlq"]:
     objs = list(c.list_objects(b, recursive=True))
     size = sum(o.size for o in objs)
     print(f"{b:10s} objects={len(objs):>6}  size={size/1024/1024:8.2f} MB")
-# warehouse 파티션(디렉터리) 수
-wh = list(c.list_objects("warehouse", prefix="production/data/", recursive=True))
-parts = {"/".join(o.object_name.split("/")[2:5]) for o in wh}
-print("warehouse partitions:", len(parts))
-print("sample:", sorted(parts)[:3])
+# Iceberg 데이터 파일/파티션 (warehouse/iceberg/lake/production/data/...)
+data = [o.object_name for o in c.list_objects("warehouse", prefix="iceberg/lake/production/data/", recursive=True)]
+parts = {"/".join(o.split("/")[5:7]) for o in data if o.endswith(".parquet")}
+print("parquet files:", len([o for o in data if o.endswith('.parquet')]))
+print("partitions:", len(parts), "sample:", sorted(parts)[:3])
 PY
 ```
 **기대**:
-- `raw`: 적재 파일 수 = 성공 적재 건수, `staging`/`warehouse` 에 객체 존재.
-- `warehouse partitions` = 누적 파티션 수(10MB 단건이면 1,296).
-- 콘솔 UI 로도 확인: 브라우저 **http://localhost:9001** (minioadmin/minioadmin).
+- `raw`: 적재 파일 수 = 성공 적재 건수. `warehouse/iceberg/lake/production/` 에 데이터(parquet)+메타(json)+매니페스트(avro).
+- `partitions` = 누적 파티션 수(10MB 단건이면 1,296). DuckDB 멀티스레드로 파티션당 parquet 다수 가능.
+- 콘솔 UI: 브라우저 **http://localhost:9001** (minioadmin/minioadmin).
 
-> **모드 A(로컬 FS)**:
+> **모드 A(로컬 FS, file:// warehouse)**:
 > ```bash
-> du -sh data/raw data/staging data/warehouse data/dlq 2>/dev/null
-> find data/warehouse -name '*.parquet' | wc -l        # 파티션(파일) 수
-> find data/warehouse -maxdepth 4 -type d | head
+> du -sh data/raw data/iceberg data/dlq 2>/dev/null
+> find data/iceberg -name '*.parquet' | wc -l        # 데이터 파일 수
 > ```
 
 ---

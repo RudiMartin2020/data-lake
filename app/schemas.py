@@ -40,7 +40,7 @@ class QueryRequest(BaseModel):
     """
     production_date: date = Field(..., description="생산일 (YYYY-MM-DD)")
     line_id: str = Field(..., description="라인 ID (예: FAB-1)")
-    limit: int = Field(1000, ge=1, le=10000, description="스캔 행 상한(과다 조회 방지)")
+    limit: int = Field(1000, ge=1, description="스캔 행 상한(과다 조회 방지)")
 
     @field_validator("line_id")
     @classmethod
@@ -49,6 +49,14 @@ class QueryRequest(BaseModel):
         if not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", v):
             raise ValueError("line_id 는 영문/숫자/-/_ 1~64자만 허용됩니다.")
         return v
+
+    @field_validator("limit")
+    @classmethod
+    def _cap_limit(cls, v: int) -> int:
+        # 설정된 상한(QUERY_ROW_LIMIT)으로 클램프
+        from .config import settings
+
+        return min(v, settings.query_row_limit)
 
 
 class QuerySummary(BaseModel):
