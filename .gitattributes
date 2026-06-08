@@ -3,6 +3,8 @@
 
 # 셸 스크립트는 Linux(centos9)에서 실행 → 반드시 LF 유지(CRLF 시 실행 실패)
 *.sh text eol=lf
+# PowerShell 런처는 Windows 용 → CRLF
+*.ps1 text eol=crlf
 
 # 바이너리/대용량 정적 에셋은 변환 금지
 *.png binary
